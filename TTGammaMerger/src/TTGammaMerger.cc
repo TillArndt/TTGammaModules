@@ -5,15 +5,16 @@
 // 
 /**\class TTGammaMerger TTGammaMerger.cc MyPackage/TTGammaMerger/src/TTGammaMerger.cc
 
- Description: [one line class summary]
+ Description: Removes Signal Overlap in TTbar sample
 
  Implementation:
-     [Notes on implementation]
+// Sort out events, that have been simulated with ttgamma matrix element.
+
 */
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.4 2012/11/26 10:10:30 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.1 2013/02/26 08:12:26 htholen Exp $
 //
 //
 
@@ -66,9 +67,12 @@ class TTGammaMerger : public edm::EDFilter {
       const double drCut_;
       const double legPtCut_;
       const bool is2to7_;
-      TH1D *kickedPhotons_;
-      TH1D *survivingPhotons_;
-      TH1D *allPhotons_;
+      TH1D *etKickedPhotons_;
+      TH1D *etSurvivingPhotons_;
+      TH1D *etAllPhotons_;
+      TH1D *etaKickedPhotons_;
+      TH1D *etaSurvivingPhotons_;
+      TH1D *etaAllPhotons_;
 };
 
 //
@@ -89,9 +93,12 @@ TTGammaMerger::TTGammaMerger(const edm::ParameterSet& iConfig) :
     is2to7_(iConfig.getUntrackedParameter<bool>("is2to7", false))
 {
     edm::Service<TFileService> fs;
-    kickedPhotons_      = fs->make<TH1D>("kickedPhotons",    ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
-    survivingPhotons_   = fs->make<TH1D>("survivingPhotons", ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
-    allPhotons_         = fs->make<TH1D>("allPhotons",       ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
+    etaKickedPhotons_     = fs->make<TH1D>("etaKickedPhotons",    ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
+    etaSurvivingPhotons_  = fs->make<TH1D>("etaSurvivingPhotons", ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
+    etaAllPhotons_        = fs->make<TH1D>("etaAllPhotons",       ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
+    etKickedPhotons_      = fs->make<TH1D>("etKickedPhotons",     ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
+    etSurvivingPhotons_   = fs->make<TH1D>("etSurvivingPhotons",  ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
+    etAllPhotons_         = fs->make<TH1D>("etAllPhotons",        ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
 }
 
 
@@ -112,9 +119,6 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     using namespace std;
     using reco::GenParticle;
     using reco::deltaR;
-
-    // Why all this?
-    // I want to sort out events, that have been simulated with ttgamma matrix element.
 
     Handle<vector<reco::GenParticle> > genParticles;
     iEvent.getByLabel(InputTag("genParticles"), genParticles);
@@ -151,7 +155,7 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
         all.push_back(gp);
         all.push_back(ttGenEvent->leptonicDecayW());
         all.push_back(ttGenEvent->hadronicDecayW());
-    } else {
+    } else { // 2 to 3
         legs.push_back(tlep);
         legs.push_back(thad);
     }
@@ -178,7 +182,8 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
             const GenParticle* daughter = (const GenParticle*) all.at(i)->daughter(j);
             if (daughter->pdgId()*daughter->pdgId() == 22*22) {
                  photons.push_back(daughter);
-                 allPhotons_->Fill(daughter->et());
+                 etAllPhotons_->Fill(daughter->et());
+                 etaAllPhotons_->Fill(daughter->eta());
             }
         }
     }
@@ -202,12 +207,16 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     }
 
     if (photons.size() && foundNoDrUnderCut) {
-        for (unsigned i = 0; i < photons.size(); ++i)
-            kickedPhotons_->Fill(photons.at(i)->et());
+        for (unsigned i = 0; i < photons.size(); ++i) {
+            etKickedPhotons_->Fill(photons.at(i)->et());
+            etaKickedPhotons_->Fill(photons.at(i)->eta());
+        }
         return false;
     } else {
-        for (unsigned i = 0; i < photons.size(); ++i)
-            survivingPhotons_->Fill(photons.at(i)->et());
+        for (unsigned i = 0; i < photons.size(); ++i) {
+            etSurvivingPhotons_->Fill(photons.at(i)->et());
+            etaSurvivingPhotons_->Fill(photons.at(i)->eta());
+        }
     }
     return true;
 }
