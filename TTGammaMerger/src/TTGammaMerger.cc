@@ -14,7 +14,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.1 2013/02/26 08:12:26 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.2 2013/03/05 16:03:38 htholen Exp $
 //
 //
 
@@ -66,6 +66,7 @@ class TTGammaMerger : public edm::EDFilter {
       const double ptCut_;
       const double drCut_;
       const double legPtCut_;
+      const bool is2to5_;
       const bool is2to7_;
       TH1D *etKickedPhotons_;
       TH1D *etSurvivingPhotons_;
@@ -90,15 +91,17 @@ TTGammaMerger::TTGammaMerger(const edm::ParameterSet& iConfig) :
     ptCut_(iConfig.getParameter<double>("ptCut")),
     drCut_(iConfig.getParameter<double>("drCut")),
     legPtCut_(iConfig.getUntrackedParameter<double>("legPtCut", 0.)),
+    is2to5_(iConfig.getUntrackedParameter<bool>("is2to5", false)),
     is2to7_(iConfig.getUntrackedParameter<bool>("is2to7", false))
 {
+    assert( !(is2to5_ && is2to7_) );
     edm::Service<TFileService> fs;
-    etaKickedPhotons_     = fs->make<TH1D>("etaKickedPhotons",    ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
-    etaSurvivingPhotons_  = fs->make<TH1D>("etaSurvivingPhotons", ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
-    etaAllPhotons_        = fs->make<TH1D>("etaAllPhotons",       ";photon e_{T} / GeV;number of photons", 80, -4., 4.);
-    etKickedPhotons_      = fs->make<TH1D>("etKickedPhotons",     ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
-    etSurvivingPhotons_   = fs->make<TH1D>("etSurvivingPhotons",  ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
-    etAllPhotons_         = fs->make<TH1D>("etAllPhotons",        ";photon e_{T} / GeV;number of photons", 70, 0., 700.);
+    etaKickedPhotons_     = fs->make<TH1D>("etaKickedPhotons",    ";photon E_{T} / GeV;number of photons", 80, -4., 4.);
+    etaSurvivingPhotons_  = fs->make<TH1D>("etaSurvivingPhotons", ";photon E_{T} / GeV;number of photons", 80, -4., 4.);
+    etaAllPhotons_        = fs->make<TH1D>("etaAllPhotons",       ";photon E_{T} / GeV;number of photons", 80, -4., 4.);
+    etKickedPhotons_      = fs->make<TH1D>("etKickedPhotons",     ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
+    etSurvivingPhotons_   = fs->make<TH1D>("etSurvivingPhotons",  ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
+    etAllPhotons_         = fs->make<TH1D>("etAllPhotons",        ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
 }
 
 
@@ -126,17 +129,16 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     Handle<TtGenEvent> ttGenEvent;
     iEvent.getByLabel(InputTag("genEvt"), ttGenEvent);
 
-    // if not semimuonic, this is surely not simulated in ttgamma 2 to 7 ME
-    if (!ttGenEvent->isTtBar()) return true;
-    if (!ttGenEvent->isSemiLeptonic(WDecay::kMuon)) return true;
-
-
     // find legs and all relevant particles
     vector<const GenParticle*> legs;
     vector<const GenParticle*> all;
-    const GenParticle* tlep = ttGenEvent->leptonicDecayTop();
-    const GenParticle* thad = ttGenEvent->hadronicDecayTop();
+    const GenParticle* top    = ttGenEvent->top();
+    const GenParticle* topBar = ttGenEvent->topBar();
     if (is2to7_) {
+        // if not semimuonic, this is not simulated in ttgamma 2 to 7 ME
+        if (!ttGenEvent->isTtBar()) return true;
+        if (!ttGenEvent->isSemiLeptonic(WDecay::kMuon)) return true;
+
         const GenParticle* gp = ttGenEvent->lepton();
         if (!gp) gp = ttGenEvent->leptonBar();
         legs.push_back(gp);
@@ -155,20 +157,38 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
         all.push_back(gp);
         all.push_back(ttGenEvent->leptonicDecayW());
         all.push_back(ttGenEvent->hadronicDecayW());
+    } else if (is2to5_) {
+        for (unsigned i = 0; i < top->numberOfDaughters(); ++i) {
+            const GenParticle* gp = (GenParticle*) top->daughter(i);
+            if (abs(gp->pdgId()) < 6 || abs(gp->pdgId()) == 24) {
+                all.push_back(gp);
+            }
+            if (abs(gp->pdgId()) < 6) {
+                legs.push_back(gp);
+            }
+        }
+        for (unsigned i = 0; i < topBar->numberOfDaughters(); ++i) {
+            const GenParticle* gp = (GenParticle*) topBar->daughter(i);
+            if (abs(gp->pdgId()) < 6 || abs(gp->pdgId()) == 24) {
+                all.push_back(gp);
+            }
+            if (abs(gp->pdgId()) < 6) {
+                legs.push_back(gp);
+            }
+        }
     } else { // 2 to 3
-        legs.push_back(tlep);
-        legs.push_back(thad);
+        legs.push_back(top);
+        legs.push_back(topBar);
     }
-    all.push_back(tlep);
-    all.push_back(thad);
-    for (unsigned i = 0; i < tlep->numberOfMothers(); ++i)
-        all.push_back((GenParticle*)tlep->mother(i));
-    for (unsigned i = 0; i < thad->numberOfMothers(); ++i)
-        all.push_back((GenParticle*) thad->mother(i));
-
+    all.push_back(top);
+    all.push_back(topBar);
+    for (unsigned i = 0; i < top->numberOfMothers(); ++i)
+        all.push_back((GenParticle*) top->mother(i));
+    for (unsigned i = 0; i < topBar->numberOfMothers(); ++i)
+        all.push_back((GenParticle*) topBar->mother(i));
 
     // check legs pt cut (which is 0. by default)
-    if (legPtCut_ > 1e-43 && is2to7_) {
+    if (legPtCut_ > 1e-43 && (is2to7_ || is2to5_)) {
         for (unsigned i = 0; i < legs.size(); ++i) {
             if (legs.at(i)->pt() < legPtCut_)
                 return true;
