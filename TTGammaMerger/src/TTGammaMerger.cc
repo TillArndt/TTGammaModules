@@ -14,7 +14,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.2 2013/03/05 16:03:38 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.3 2013/03/11 16:29:20 htholen Exp $
 //
 //
 
@@ -209,14 +209,14 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     }
 
     // sort out fails (must fulfill both cuts)
-    bool foundNoDrUnderCut = true;
+    bool foundNoSignalPhoton = true;
     for (unsigned i = 0; i < photons.size(); ++i) {
         const GenParticle* photon = photons.at(i);
         if (photon->pt() > ptCut_) {
             for (unsigned j = 0; j < legs.size(); ++j) {
                 const GenParticle* leg = legs.at(j);
                 if (deltaR(*photon, *leg) < drCut_) {
-                    foundNoDrUnderCut = false;
+                    foundNoSignalPhoton = false;
                     cout << "<TTGammaMerger>: removing Event! "
                          << "Photon pt < ptCut: (" << photon->pt() << " > " << ptCut_
                          << ") and no deltaR to a leg smaller than " << drCut_ << endl;
@@ -226,19 +226,18 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
         }
     }
 
-    if (photons.size() && foundNoDrUnderCut) {
-        for (unsigned i = 0; i < photons.size(); ++i) {
-            etKickedPhotons_->Fill(photons.at(i)->et());
-            etaKickedPhotons_->Fill(photons.at(i)->eta());
-        }
-        return false;
-    } else {
+    if (foundNoSignalPhoton) {
         for (unsigned i = 0; i < photons.size(); ++i) {
             etSurvivingPhotons_->Fill(photons.at(i)->et());
             etaSurvivingPhotons_->Fill(photons.at(i)->eta());
         }
+     } else {
+        for (unsigned i = 0; i < photons.size(); ++i) {
+            etKickedPhotons_->Fill(photons.at(i)->et());
+            etaKickedPhotons_->Fill(photons.at(i)->eta());
+        }
     }
-    return true;
+    return foundNoSignalPhoton;
 }
 
 // ------------ method called once each job just before starting event loop  ------------
