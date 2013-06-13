@@ -14,7 +14,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.4 2013/06/13 12:05:02 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.5 2013/06/13 18:57:15 htholen Exp $
 //
 //
 
@@ -213,15 +213,20 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     for (unsigned i = 0; i < photons.size(); ++i) {
         const GenParticle* photon = photons.at(i);
         if (photon->pt() > ptCut_) {
+            bool closeToLeg = false;
             for (unsigned j = 0; j < legs.size(); ++j) {
                 const GenParticle* leg = legs.at(j);
-                if (deltaR(*photon, *leg) > drCut_) {
-                    foundNoSignalPhoton = false;
-                    cout << "<TTGammaMerger>: removing Event! "
-                         << "Photon pt < ptCut: (" << photon->pt() << " > " << ptCut_
-                         << ") and no deltaR to a leg smaller than " << drCut_ << endl;
-                    break;
+                if (deltaR(*photon, *leg) < drCut_) {
+                    closeToLeg = true;
                 }
+            }
+            if (!closeToLeg) {
+                foundNoSignalPhoton = false;
+                cout << "<TTGammaMerger>: removing Event! "
+                     << "Photon pt < ptCut: (" << photon->pt() << " > " << ptCut_
+                     << ") and no deltaR to a leg smaller than " << drCut_ << endl;
+                break;
+                
             }
         }
     }
