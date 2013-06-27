@@ -14,7 +14,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.5 2013/06/13 18:57:15 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.6 2013/06/13 20:00:58 htholen Exp $
 //
 //
 
@@ -23,6 +23,8 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+#include <string>
+#include <sstream>
 #include <TH1D.h>
 
 // user include files
@@ -36,7 +38,6 @@
 #include "FWCore/ServiceRegistry/interface/Service.h"
 #include "CommonTools/UtilAlgos/interface/TFileService.h"
 
-#include "AnalysisDataFormats/TopObjects/interface/TtGenEvent.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 #include "DataFormats/Math/interface/deltaR.h"
 
@@ -52,6 +53,10 @@ class TTGammaMerger : public edm::EDFilter {
       static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
    private:
+      virtual void printParticle(const reco::GenParticle* p, std::ostringstream &out);
+      virtual void printParticles(std::vector<const reco::GenParticle*> &v, std::ostringstream &out);
+      virtual void findMothers(const reco::GenParticle* p, std::vector<const reco::GenParticle*> &moms);
+      virtual void findDaughters(const reco::GenParticle* p,std::vector<const reco::GenParticle*> &all);
       virtual void beginJob() ;
       virtual bool filter(edm::Event&, const edm::EventSetup&);
       virtual void endJob() ;
@@ -65,9 +70,6 @@ class TTGammaMerger : public edm::EDFilter {
 
       const double ptCut_;
       const double drCut_;
-      const double legPtCut_;
-      const bool is2to5_;
-      const bool is2to7_;
       TH1D *etKickedPhotons_;
       TH1D *etSurvivingPhotons_;
       TH1D *etAllPhotons_;
@@ -89,12 +91,8 @@ class TTGammaMerger : public edm::EDFilter {
 //
 TTGammaMerger::TTGammaMerger(const edm::ParameterSet& iConfig) :
     ptCut_(iConfig.getParameter<double>("ptCut")),
-    drCut_(iConfig.getParameter<double>("drCut")),
-    legPtCut_(iConfig.getUntrackedParameter<double>("legPtCut", 0.)),
-    is2to5_(iConfig.getUntrackedParameter<bool>("is2to5", false)),
-    is2to7_(iConfig.getUntrackedParameter<bool>("is2to7", false))
+    drCut_(iConfig.getParameter<double>("drCut"))
 {
-    assert( !(is2to5_ && is2to7_) );
     edm::Service<TFileService> fs;
     etaKickedPhotons_     = fs->make<TH1D>("etaKickedPhotons",    ";photon E_{T} / GeV;number of photons", 80, -4., 4.);
     etaSurvivingPhotons_  = fs->make<TH1D>("etaSurvivingPhotons", ";photon E_{T} / GeV;number of photons", 80, -4., 4.);
@@ -102,6 +100,8 @@ TTGammaMerger::TTGammaMerger(const edm::ParameterSet& iConfig) :
     etKickedPhotons_      = fs->make<TH1D>("etKickedPhotons",     ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
     etSurvivingPhotons_   = fs->make<TH1D>("etSurvivingPhotons",  ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
     etAllPhotons_         = fs->make<TH1D>("etAllPhotons",        ";photon E_{T} / GeV;number of photons", 70, 0., 700.);
+
+    produces<std::vector<reco::GenParticle> >("signalPhotons");
 }
 
 
@@ -114,6 +114,75 @@ TTGammaMerger::~TTGammaMerger()
 // member functions
 //
 
+void
+TTGammaMerger::printParticle(const reco::GenParticle* p, std::ostringstream &out)
+{
+    char buf[256];
+    snprintf(buf, 256,
+           " %5d | %2d | %7.3f %10.3f %6.3f | %10.3f %10.3f %10.3f %8.3f |\n",
+           p->pdgId(),
+           p->status(),
+           p->pt(),
+           p->eta(),
+           p->phi(),
+           p->px(),
+           p->py(),
+           p->pz(),
+           p->mass()
+          );
+    out << buf;
+}
+
+void
+TTGammaMerger::printParticles(std::vector<const reco::GenParticle*> &v, std::ostringstream &out)
+{
+    for (unsigned i = 0; i < v.size(); ++i) printParticle(v.at(i), out);
+}
+
+void
+TTGammaMerger::findMothers(
+    const reco::GenParticle* p,
+    std::vector<const reco::GenParticle*> &moms
+) {
+    // only partons are interesting:
+    if (abs(p->pdgId()) > 21) return;
+
+    // already in vector of moms?
+    bool new_particle = true;
+    for (unsigned i = 0; i < moms.size(); ++i) {
+        if (moms[i] == p) {
+            new_particle = false;
+            break;
+        }
+    }
+    if (new_particle) {
+        moms.push_back(p);
+
+        // go recursive
+        for (unsigned i = 0; i < p->numberOfMothers(); ++i) {
+            findMothers((const reco::GenParticle*) p->mother(i), moms);
+        }
+    }
+}
+
+void
+TTGammaMerger::findDaughters(
+    const reco::GenParticle* p,
+    std::vector<const reco::GenParticle*> &all
+) {
+    // walk over daughters
+    for (unsigned i = 0; i < p->numberOfDaughters(); ++i) {
+        const reco::GenParticle* da = (const reco::GenParticle*) p->daughter(i);
+        int abs_pdg = abs(da->pdgId());
+
+        // take only tops, bs and Ws
+        if (abs_pdg == 6 || abs_pdg == 24 || abs_pdg == 5) {
+            all.push_back(da);
+            findDaughters(da, all);
+        }
+    }
+}
+
 // ------------ method called on each new Event  ------------
 bool
 TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
@@ -123,92 +192,84 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     using reco::GenParticle;
     using reco::deltaR;
 
-    Handle<vector<reco::GenParticle> > genParticles;
-    iEvent.getByLabel(InputTag("genParticles"), genParticles);
+    ostringstream out("TTGammaMerger");
+    out << "    ID |Stat|    pt       eta     phi   |     px         py         pz        m     |\n";
 
-    Handle<TtGenEvent> ttGenEvent;
-    iEvent.getByLabel(InputTag("genEvt"), ttGenEvent);
+    Handle<vector<GenParticle> > gens;
+    iEvent.getByLabel(InputTag("genParticles"), gens);
 
-    // find legs and all relevant particles
-    vector<const GenParticle*> legs;
+    /////////////////////////////////////////////////// find core particles ///
     vector<const GenParticle*> all;
-    const GenParticle* top    = ttGenEvent->top();
-    const GenParticle* topBar = ttGenEvent->topBar();
-    if (is2to7_) {
-        // if not semimuonic, this is not simulated in ttgamma 2 to 7 ME
-        if (!ttGenEvent->isTtBar()) return true;
-        if (!ttGenEvent->isSemiLeptonic(WDecay::kMuon)) return true;
 
-        const GenParticle* gp = ttGenEvent->lepton();
-        if (!gp) gp = ttGenEvent->leptonBar();
-        legs.push_back(gp);
-        all.push_back(gp);
-        gp = ttGenEvent->leptonicDecayB();
-        legs.push_back(gp);
-        all.push_back(gp);
-        gp = ttGenEvent->hadronicDecayB();
-        legs.push_back(gp);
-        all.push_back(gp);
-        gp = ttGenEvent->hadronicDecayQuark();
-        legs.push_back(gp);
-        all.push_back(gp);
-        gp = ttGenEvent->hadronicDecayQuarkBar();
-        legs.push_back(gp);
-        all.push_back(gp);
-        all.push_back(ttGenEvent->leptonicDecayW());
-        all.push_back(ttGenEvent->hadronicDecayW());
-    } else if (is2to5_) {
-        for (unsigned i = 0; i < top->numberOfDaughters(); ++i) {
-            const GenParticle* gp = (GenParticle*) top->daughter(i);
-            if (abs(gp->pdgId()) < 6 || abs(gp->pdgId()) == 24) {
-                all.push_back(gp);
-            }
-            if (abs(gp->pdgId()) < 6) {
-                legs.push_back(gp);
-            }
-        }
-        for (unsigned i = 0; i < topBar->numberOfDaughters(); ++i) {
-            const GenParticle* gp = (GenParticle*) topBar->daughter(i);
-            if (abs(gp->pdgId()) < 6 || abs(gp->pdgId()) == 24) {
-                all.push_back(gp);
-            }
-            if (abs(gp->pdgId()) < 6) {
-                legs.push_back(gp);
-            }
-        }
-    } else { // 2 to 3
-        legs.push_back(top);
-        legs.push_back(topBar);
+    // find first top quarks as a starting point
+    GenParticle local_top;
+    GenParticle local_topBar;
+    const GenParticle* top      = 0;
+    const GenParticle* topBar   = 0;
+    for (vector<GenParticle>::const_iterator i = gens->begin(); i != gens->end(); ++i){
+         if (!top && i->pdgId() ==  6) {
+            local_top = *i;
+            top = &local_top;
+         }
+         if (!topBar && i->pdgId() == -6) {
+            local_topBar = *i;
+            topBar = &local_topBar;
+         }
+         if (top && topBar) break;
     }
-    all.push_back(top);
-    all.push_back(topBar);
-    for (unsigned i = 0; i < top->numberOfMothers(); ++i)
-        all.push_back((GenParticle*) top->mother(i));
-    for (unsigned i = 0; i < topBar->numberOfMothers(); ++i)
-        all.push_back((GenParticle*) topBar->mother(i));
+    out << "top, topBar\n";
+    printParticle(top, out);
+    printParticle(topBar, out);
 
-    // check legs pt cut (which is 0. by default)
-    if (legPtCut_ > 1e-43 && (is2to7_ || is2to5_)) {
-        for (unsigned i = 0; i < legs.size(); ++i) {
-            if (legs.at(i)->pt() < legPtCut_)
-                return true;
-        }
+    // find initial state particles
+    findMothers(top, all);
+    findMothers(topBar, all);
+    out << "top, topBar and moms\n";
+    printParticles(all, out);
+
+    // find relevant final states
+    findDaughters(top, all);
+    findDaughters(topBar, all);
+    out << "top, topBar, moms and daughters\n";
+    printParticles(all, out);
+
+    /////////////////////////////////////////////////////// find legs (b's) ///
+    const GenParticle* b    = 0;
+    const GenParticle* bbar = 0;
+    for (int i = all.size() - 1; i > -1; --i) {
+        const GenParticle* p = all.at(i);
+        if (!b    && p->pdgId() ==  5) b    = p;
+        if (!bbar && p->pdgId() == -5) bbar = p;
+        if (b && bbar) break;
     }
+    vector<const GenParticle*> legs;
+    legs.push_back(b);
+    legs.push_back(bbar);
+    out << "legs (b, bbar)\n";
+    printParticles(legs, out);
 
-    // find relevant photons
+    ///////////////////////////////////////////////// find relevant photons ///
     vector<const GenParticle*> photons;
     for (unsigned i = 0; i < all.size(); ++i) {
         for (unsigned j = 0; j < all.at(i)->numberOfDaughters(); ++j) {
             const GenParticle* daughter = (const GenParticle*) all.at(i)->daughter(j);
-            if (daughter->pdgId()*daughter->pdgId() == 22*22) {
+            if (abs(daughter->pdgId()) == 22) {
                  photons.push_back(daughter);
                  etAllPhotons_->Fill(daughter->et());
                  etaAllPhotons_->Fill(daughter->eta());
             }
         }
     }
+    out << "photons\n";
+    printParticles(photons, out);
 
-    // sort out fails (must fulfill both cuts)
+    // put signal photons to event
+    std::vector<reco::GenParticle>* signalPhotons = new std::vector<reco::GenParticle>();
+    for (unsigned i = 0; i < photons.size(); ++i) signalPhotons->push_back(*photons.at(i));
+    std::auto_ptr<std::vector<reco::GenParticle> > pOut(signalPhotons);
+    iEvent.put(pOut, "signalPhotons");
+
+    /////////////////////////////// sort out fails (must fulfill both cuts) ///
     bool foundNoSignalPhoton = true;
     for (unsigned i = 0; i < photons.size(); ++i) {
         const GenParticle* photon = photons.at(i);
@@ -236,11 +297,13 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
             etSurvivingPhotons_->Fill(photons.at(i)->et());
             etaSurvivingPhotons_->Fill(photons.at(i)->eta());
         }
+        LogInfo("TTGammaMerger") << out.str();
      } else {
         for (unsigned i = 0; i < photons.size(); ++i) {
             etKickedPhotons_->Fill(photons.at(i)->et());
             etaKickedPhotons_->Fill(photons.at(i)->eta());
         }
+        LogWarning("TTGammaMerger") << out.str();
     }
     return foundNoSignalPhoton;
 }
