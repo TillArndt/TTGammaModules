@@ -14,7 +14,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed May 23 20:38:31 CEST 2012
-// $Id: TTGammaMerger.cc,v 1.6 2013/06/13 20:00:58 htholen Exp $
+// $Id: TTGammaMerger.cc,v 1.7 2013/06/27 14:30:17 htholen Exp $
 //
 //
 
@@ -198,6 +198,9 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     Handle<vector<GenParticle> > gens;
     iEvent.getByLabel(InputTag("genParticles"), gens);
 
+    std::vector<reco::GenParticle>* signalPhotons = new std::vector<reco::GenParticle>();
+    std::auto_ptr<std::vector<reco::GenParticle> > pOut(signalPhotons);
+
     /////////////////////////////////////////////////// find core particles ///
     vector<const GenParticle*> all;
 
@@ -233,21 +236,6 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     out << "top, topBar, moms and daughters\n";
     printParticles(all, out);
 
-    /////////////////////////////////////////////////////// find legs (b's) ///
-    const GenParticle* b    = 0;
-    const GenParticle* bbar = 0;
-    for (int i = all.size() - 1; i > -1; --i) {
-        const GenParticle* p = all.at(i);
-        if (!b    && p->pdgId() ==  5) b    = p;
-        if (!bbar && p->pdgId() == -5) bbar = p;
-        if (b && bbar) break;
-    }
-    vector<const GenParticle*> legs;
-    legs.push_back(b);
-    legs.push_back(bbar);
-    out << "legs (b, bbar)\n";
-    printParticles(legs, out);
-
     ///////////////////////////////////////////////// find relevant photons ///
     vector<const GenParticle*> photons;
     for (unsigned i = 0; i < all.size(); ++i) {
@@ -264,10 +252,42 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     printParticles(photons, out);
 
     // put signal photons to event
-    std::vector<reco::GenParticle>* signalPhotons = new std::vector<reco::GenParticle>();
     for (unsigned i = 0; i < photons.size(); ++i) signalPhotons->push_back(*photons.at(i));
-    std::auto_ptr<std::vector<reco::GenParticle> > pOut(signalPhotons);
     iEvent.put(pOut, "signalPhotons");
+
+    /////////////////////////////////////////////////////// find legs (b's) ///
+    const GenParticle* b    = 0;
+    const GenParticle* bbar = 0;
+
+    // if mother of photon is a b, the "sister" is takes as leg
+    for (unsigned i = 0; i < photons.size(); ++i) {
+        const GenParticle* mom = (GenParticle*) photons.at(i)->mother();
+        if (abs(mom->pdgId()) == 5) {
+            for (unsigned j = 0; j < mom->numberOfDaughters(); ++j) {
+                const GenParticle* sis = (GenParticle*) mom->daughter(j);
+                if (sis->pdgId() ==  5) b    = sis;
+                if (sis->pdgId() == -5) bbar = sis;
+            }
+        }
+    }
+
+    // if mother of photon is not b, then the status 3 b's are taken
+    for (int i = all.size() - 1; i > -1; --i) {
+        const GenParticle* p = all.at(i);
+        int stat = p->status();
+        int pdg  = p->pdgId();
+        if (!b    && stat == 3 && pdg ==  5) b    = p;
+        if (!bbar && stat == 3 && pdg == -5) bbar = p;
+        if (b && bbar) break;
+    }
+
+    if (!(b && bbar)) return true; // top did not decay to W+b: return
+
+    vector<const GenParticle*> legs;
+    legs.push_back(b);
+    legs.push_back(bbar);
+    out << "legs (b, bbar)\n";
+    printParticles(legs, out);
 
     /////////////////////////////// sort out fails (must fulfill both cuts) ///
     bool foundNoSignalPhoton = true;
@@ -283,9 +303,9 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
             }
             if (!closeToLeg) {
                 foundNoSignalPhoton = false;
-                cout << "<TTGammaMerger>: removing Event! "
-                     << "Photon pt < ptCut: (" << photon->pt() << " > " << ptCut_
-                     << ") and no deltaR to a leg smaller than " << drCut_ << endl;
+                out << "<TTGammaMerger>: removing Event! "
+                    << "Photon pt < ptCut: (" << photon->pt() << " > " << ptCut_
+                    << ") and no deltaR to a leg smaller than " << drCut_ << endl;
                 break;
                 
             }
