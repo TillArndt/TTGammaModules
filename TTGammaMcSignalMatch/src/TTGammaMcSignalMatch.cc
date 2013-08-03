@@ -13,7 +13,7 @@
 //
 // Original Author:  Heiner Tholen
 //         Created:  Wed Mar 13 11:56:59 CET 2013
-// $Id: TTGammaMcSignalMatch.cc,v 1.1 2013/03/27 12:52:01 htholen Exp $
+// $Id: TTGammaMcSignalMatch.cc,v 1.2 2013/06/29 14:56:35 htholen Exp $
 //
 //
 
@@ -33,8 +33,7 @@
 
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ServiceRegistry/interface/Service.h"
-#include <DataFormats/PatCandidates/interface/Photon.h>
-#include "AnalysisDataFormats/TopObjects/interface/TtGenEvent.h"
+#include "DataFormats/PatCandidates/interface/Photon.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 #include "DataFormats/Math/interface/deltaR.h"
 
