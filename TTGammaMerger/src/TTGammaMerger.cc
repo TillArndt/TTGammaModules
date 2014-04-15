@@ -297,14 +297,20 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
    
     for (unsigned i = 0; i < quarks.size();++i){
 	const GenParticle* quark = quarks.at(i);
-	if (quark->pt() > 20) return true;
-        for (unsigned j = 0; j < quarks.size();++j ){
-	    const GenParticle* leg = quarks.at(j);
-	    if (deltaR(*quark, *leg) < 0.5) return true;
+	if (quark->pt() < 20) return true;
+        for (unsigned j = i+1; j < quarks.size();++j ){
+	    const GenParticle* leg = quarks.at(j); 
+	    if (deltaR(*quark, *leg) < 0.5){ 
+		std::cout<<"leg"<<std::endl;
+		return true;
+            }
 	}
 	for (unsigned k= 0; k<leptons.size();k++){
 	    const GenParticle* lepton = leptons.at(k);
-	    if (deltaR(*quark, *lepton) < 0.5) return true;
+	    if (deltaR(*quark, *lepton) < 0.5){
+		 std::cout<<"lepton"<<std::endl;
+		 return true;
+	    }
     	}
     }
 
