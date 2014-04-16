@@ -294,21 +294,19 @@ TTGammaMerger::filter(edm::Event& iEvent, const edm::EventSetup& iSetup)
     //////////////////Check for lepton, b and jet cuts //////////////
     quarks.insert(quarks.end(),bquarks.begin(),bquarks.end());
     quarks.insert(quarks.end(),lightquarks.begin(),lightquarks.end()); 
-   
+    
     for (unsigned i = 0; i < quarks.size();++i){
 	const GenParticle* quark = quarks.at(i);
 	if (quark->pt() < 20) return true;
         for (unsigned j = i+1; j < quarks.size();++j ){
 	    const GenParticle* leg = quarks.at(j); 
 	    if (deltaR(*quark, *leg) < 0.5){ 
-		std::cout<<"leg"<<std::endl;
 		return true;
             }
 	}
 	for (unsigned k= 0; k<leptons.size();k++){
 	    const GenParticle* lepton = leptons.at(k);
 	    if (deltaR(*quark, *lepton) < 0.5){
-		 std::cout<<"lepton"<<std::endl;
 		 return true;
 	    }
     	}
